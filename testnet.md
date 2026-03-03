@@ -2,7 +2,7 @@
 
 ## Environment Variables
 ```
-BINARY="lumend"
+BINARY="neurond"
 CHAIN_ID="neuron-1"
 DENOM="ualpha"
 STAKE_DENOM="usync"
