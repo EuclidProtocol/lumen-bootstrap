@@ -18,4 +18,7 @@ PRIMARY_SNAP_RPC_IP=""
 SNAP_RPCS=""
 
 
+PLATFORM="x86_64"
+
+
 ```

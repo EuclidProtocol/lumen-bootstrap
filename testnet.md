@@ -16,6 +16,6 @@ PEERS=""
 PRIMARY_SNAP_RPC_IP=""
 # SNAP_RPCS is a comma separated list of primary snap rpc ips
 SNAP_RPCS=""
-
+PLATFORM="x86_64"
 
 ```

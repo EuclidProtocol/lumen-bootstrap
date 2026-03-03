@@ -94,8 +94,8 @@ if [[ ! -d $CONFIG_FOLDER ]];
 then
     echo "🧪 Creating home for $VALIDATOR_MONIKER"
     echo $VALIDATOR_MNEMONIC | $BINARY init $VALIDATOR_MONIKER --chain-id $CHAIN_ID --home $CHAIN_HOME --default-denom $DENOM --recover
-    cp /lumend/config.toml $CONFIG_FOLDER/config.toml
-    cp /lumend/genesis.json $CONFIG_FOLDER/genesis.json
+    cp /$BINARY/config.toml $CONFIG_FOLDER/config.toml
+    cp /$BINARY/genesis.json $CONFIG_FOLDER/genesis.json
 
     edit_client
     edit_app

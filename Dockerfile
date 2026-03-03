@@ -36,4 +36,4 @@ EXPOSE 1317
 # GRPC
 EXPOSE 9090
 
-ENTRYPOINT ["/${BINARY}/setup.sh"]
+ENTRYPOINT ["./setup.sh"]
