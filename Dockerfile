@@ -1,25 +1,30 @@
 FROM alpine:3.20
 
+ARG BINARY
+ARG PLATFORM
+
+
 RUN apk update
 RUN apk add curl
 RUN apk add "dasel>2.0.0"
 RUN apk add jq
 
 # Download binary and config files
-RUN curl -L https://so7hoepmu4vbb7pi.public.blob.vercel-storage.com/lumen/lumend_x86_64 -o /bin/lumend
-RUN curl -L https://so7hoepmu4vbb7pi.public.blob.vercel-storage.com/lumen/genesis.json -o /lumend/genesis.json
-RUN curl -L https://so7hoepmu4vbb7pi.public.blob.vercel-storage.com/lumen/config.toml -o /lumend/config.toml
+RUN curl -L https://so7hoepmu4vbb7pi.public.blob.vercel-storage.com/${BINARY}/${BINARY}_${PLATFORM} -o /bin/${BINARY}
+RUN mkdir -p /${BINARY}
+RUN curl -L https://so7hoepmu4vbb7pi.public.blob.vercel-storage.com/${BINARY}/genesis.json -o /${BINARY}/genesis.json
+RUN curl -L https://so7hoepmu4vbb7pi.public.blob.vercel-storage.com/${BINARY}/config.toml -o /${BINARY}/config.toml
 
 
 # Make binary executable
-RUN chmod +x /bin/lumend
+RUN chmod +x /bin/${BINARY}
 
-COPY scripts/setup_chain.sh /lumend/setup.sh
+COPY scripts/setup_chain.sh /${BINARY}/setup.sh
 # Make sript executable
-RUN chmod +x /lumend/setup.sh
+RUN chmod +x /${BINARY}/setup.sh
 
 
-ENV HOME /lumend
+ENV HOME /${BINARY}
 WORKDIR $HOME
 
 # P2P
@@ -31,4 +36,4 @@ EXPOSE 1317
 # GRPC
 EXPOSE 9090
 
-ENTRYPOINT ["/lumend/setup.sh"]
+ENTRYPOINT ["/${BINARY}/setup.sh"]

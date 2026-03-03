@@ -2,18 +2,21 @@ version: "3"
 networks:
   lumen-network:
 services:
-  lumen-1:
+  chain:
       image: euclidprotocol/lumend:latest
       build:
         context: .
         dockerfile: Dockerfile
+        args:
+          - BINARY=${BINARY}
+          - PLATFORM=${PLATFORM}
       volumes:
-        - ./.config/.lumen-1/:/lumend/.lumend/
+        - ./.config/${CHAIN_ID}/:/${BINARY}/.${BINARY}/
       environment:
-        - BINARY=lumend
-        - CHAIN_ID=lumen-1
-        - DENOM=ualpha
-        - STAKE_DENOM=usync
+        - BINARY=${BINARY}
+        - CHAIN_ID=${CHAIN_ID}
+        - DENOM=${DENOM}
+        - STAKE_DENOM=${STAKE_DENOM}
         - VALIDATOR_MONIKER=validator
         - VALIDATOR_MNEMONIC=${VALIDATOR_MNEMONIC}
         # NODE_IP is the ip of the node to connect to
