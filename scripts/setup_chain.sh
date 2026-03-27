@@ -46,7 +46,7 @@ edit_config () {
 
     if [[ $PRIMARY_SNAP_RPC_IP != "" ]]; then
         HEIGHT=$(curl -s "http://$PRIMARY_SNAP_RPC_IP:26657/block" | jq -r .result.block.header.height)
-        HEIGHT=$(($HEIGHT - 10000))
+        HEIGHT=$(($HEIGHT - 5000))
         HASH=$(curl -s "http://$PRIMARY_SNAP_RPC_IP:26657/block?height=$HEIGHT" | jq -r .result.block_id.hash)
         # Enable statesync
         dasel put -t bool -f $CONFIG_FOLDER/config.toml '.statesync.enable' -v true
