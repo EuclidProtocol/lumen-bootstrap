@@ -7,9 +7,10 @@
  *   1. Query the chain node for current block height and chain ID
  *   2. Stop the node (required for data consistency)
  *   3. Compress chain data into lz4 archives
- *   4. Restart the node (even if compression fails)
- *   5. Upload archives to S3-compatible storage
- *   6. Clean up local files
+ *   4. Upload archives to S3-compatible storage
+ *   5. Clean up local archives
+ *   6. Wipe chain data (make clean) to trigger fresh state sync
+ *   7. Restart the node
  *
  * Usage:
  *   bun run src/cli.ts snapshot
@@ -20,7 +21,7 @@ import { resolve } from "path";
 import { unlinkSync } from "fs";
 import { config } from "./config.ts";
 import { getStatus } from "./lib/chain.ts";
-import { stopNode, startNode } from "./lib/docker.ts";
+import { stopNode, startNode, cleanChainData } from "./lib/docker.ts";
 import { createSnapshot } from "./lib/compress.ts";
 import { uploadSnapshot } from "./lib/storage.ts";
 
@@ -66,11 +67,7 @@ async function runSnapshot() {
     throw err;
   }
 
-  // Step 4: Restart the node now that compression is done.
-  console.log("==> Starting service...");
-  await startNode();
-
-  // Step 5: Upload to S3. Files are stored under a chain ID prefix
+  // Step 4: Upload to S3. Files are stored under a chain ID prefix
   // (e.g. `lumen-1/lumen-1_1234567.tar.lz4`).
   const s3Prefix = `${status.chainId}/`;
   const mainKey = `${s3Prefix}${status.chainId}_${status.blockHeight}.tar.lz4`;
@@ -86,12 +83,22 @@ async function runSnapshot() {
     console.log(`    Uploaded ${wasmKey}`);
   }
 
-  // Step 6: Remove local archives after successful upload.
+  // Step 5: Remove local archives after successful upload.
   console.log("==> Cleaning up local files...");
   unlinkSync(result.mainFile);
   if (result.wasmFile) {
     unlinkSync(result.wasmFile);
   }
+
+  // Step 6: Wipe chain data to keep snapshots small. make clean backs up
+  // node_key.json to cache/ automatically, so node identity is preserved.
+  // The next startup will trigger a fresh state sync.
+  console.log("==> Cleaning chain data (will state sync on restart)...");
+  await cleanChainData();
+
+  // Step 7: Restart the node. It will state sync from peers to catch up.
+  console.log("==> Starting service (state syncing)...");
+  await startNode();
 
   console.log("==> Done.");
 }

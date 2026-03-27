@@ -59,3 +59,12 @@ export async function stopNode(): Promise<void> {
 export async function startNode(): Promise<void> {
   await run(["make", "startd"]);
 }
+
+/**
+ * Wipes chain data by running `make clean`. This backs up node_key.json
+ * to cache/ before deleting .config/, so node identity is preserved.
+ * The next `make startd` will trigger a fresh state sync.
+ */
+export async function cleanChainData(): Promise<void> {
+  await run(["make", "clean"]);
+}
