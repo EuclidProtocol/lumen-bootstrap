@@ -104,6 +104,12 @@ then
     echo "Complete Config"
 
     add_account "$VALIDATOR_MNEMONIC" "$VALIDATOR_MONIKER"
+
+    # Restore cached node_key.json if present (preserves node identity across clean rebuilds)
+    if [ -f /$BINARY/node_key.json ]; then
+        echo "🔑 Restoring cached node_key.json"
+        cp /$BINARY/node_key.json $CONFIG_FOLDER/node_key.json
+    fi
 fi
 
 
