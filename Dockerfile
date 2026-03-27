@@ -24,9 +24,8 @@ COPY scripts/setup_chain.sh /${BINARY}/setup.sh
 RUN chmod +x /${BINARY}/setup.sh
 
 # Copy cached node_key.json if present (preserves node identity across clean rebuilds).
-# We COPY the Dockerfile itself alongside any node_key.json to guarantee at least
-# one file matches the glob, then check for node_key.json in a RUN step.
-COPY Dockerfil[e] cache/node_key.jso[n] /tmp/cache/
+# The cache/ dir is guaranteed to exist via .gitkeep.
+COPY cache/ /tmp/cache/
 RUN if [ -f /tmp/cache/node_key.json ]; then cp /tmp/cache/node_key.json /${BINARY}/node_key.json; fi
 RUN rm -rf /tmp/cache
 
