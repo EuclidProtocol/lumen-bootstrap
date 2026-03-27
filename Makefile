@@ -1,4 +1,4 @@
-.PHONY: start stop startd build clean
+.PHONY: start stop startd build clean snapshot-api snapshot-api-stop snapshot-api-logs
 
 # Build the Docker images
 build:
@@ -18,6 +18,18 @@ stop:
 
 logs:
 	@DOCKER_BUILDKIT=1 docker compose logs -f --since 10s
+
+# Start snapshot API server (detached)
+snapshot-api:
+	@DOCKER_BUILDKIT=1 docker compose --profile snapshot up -d --build snapshot-api
+
+# Stop snapshot API server
+snapshot-api-stop:
+	@DOCKER_BUILDKIT=1 docker compose --profile snapshot stop snapshot-api
+
+# View snapshot API logs
+snapshot-api-logs:
+	@DOCKER_BUILDKIT=1 docker compose --profile snapshot logs -f snapshot-api --since 10s
 
 clean:
 	@rm -rf .config

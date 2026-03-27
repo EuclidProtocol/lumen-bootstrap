@@ -1,0 +1,23 @@
+{
+  "name": "lumen-bootstrap",
+  "module": "src/server.ts",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "bun run --watch src/server.ts",
+    "start": "bun run src/server.ts",
+    "snapshot": "bun run src/cli.ts snapshot"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.1019.0",
+    "@aws-sdk/lib-storage": "^3.1019.0",
+    "@aws-sdk/s3-request-presigner": "^3.1019.0",
+    "hono": "^4.12.9"
+  }
+}
