@@ -37,6 +37,23 @@ snapshot-api-stop:
 snapshot-api-logs:
 	@DOCKER_BUILDKIT=1 docker compose --profile snapshot logs -f snapshot-api --since 10s
 
+# Start edgenet node in foreground
+edgenet-start:
+	@echo "Starting edgenet node..."
+	@DOCKER_BUILDKIT=1 docker compose --profile edgenet up --build edgenet
+
+# Start edgenet node in background
+edgenet-startd:
+	@echo "Starting edgenet node in background..."
+	@DOCKER_BUILDKIT=1 docker compose --profile edgenet up -d --build edgenet
+# Stop edgenet node
+edgenet-stop:
+	@DOCKER_BUILDKIT=1 docker compose --profile edgenet stop edgenet
+
+# View edgenet node logs
+edgenet-logs:
+	@DOCKER_BUILDKIT=1 docker compose --profile edgenet logs -f edgenet --since 10s
+
 # Remove chain data, backing up node_key.json to cache/ first
 clean:
 	@mkdir -p cache

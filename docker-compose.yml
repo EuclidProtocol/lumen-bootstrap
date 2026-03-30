@@ -3,57 +3,85 @@ networks:
   lumen-network:
 services:
   chain:
-      image: euclidprotocol/lumend:latest
-      build:
-        context: .
-        dockerfile: Dockerfile
-        args:
-          - BINARY=${BINARY}
-          - PLATFORM=${PLATFORM}
-      volumes:
-        - ./.config/${CHAIN_ID}/:/${BINARY}/.${BINARY}/
-      environment:
+    image: euclidprotocol/lumend:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
         - BINARY=${BINARY}
-        - CHAIN_ID=${CHAIN_ID}
-        - DENOM=${DENOM}
-        - STAKE_DENOM=${STAKE_DENOM}
-        - VALIDATOR_MONIKER=validator
-        - VALIDATOR_MNEMONIC=${VALIDATOR_MNEMONIC}
-        # NODE_IP is the ip of the node to connect to
-        - NODE_IP=${NODE_IP}
-        # PEERS is a comma separated list of peers to connect to
-        - PEERS=${PEERS}
-        # PRIMARY_SNAP_RPC_IP is the ip of the primary snap rpc to fetch latest block height and hash
-        - PRIMARY_SNAP_RPC_IP=${PRIMARY_SNAP_RPC_IP}
-        # SNAP_RPCS is a comma separated list of primary snap rpc ips
-        - SNAP_RPCS=${SNAP_RPCS}
-      ports:
-        - 26657:26657 # RPC
-        - 1317:1317 # LCD
-        - 9090:9090 # GRPC
-        - 26656:26656 # P2P
-      networks:
-        - lumen-network
-      restart: on-failure
+        - PLATFORM=${PLATFORM}
+    volumes:
+      - ./.config/${CHAIN_ID}/:/${BINARY}/.${BINARY}/
+    environment:
+      - BINARY=${BINARY}
+      - CHAIN_ID=${CHAIN_ID}
+      - DENOM=${DENOM}
+      - STAKE_DENOM=${STAKE_DENOM}
+      - VALIDATOR_MONIKER=validator
+      - VALIDATOR_MNEMONIC=${VALIDATOR_MNEMONIC}
+      # NODE_IP is the ip of the node to connect to
+      - NODE_IP=${NODE_IP}
+      # PEERS is a comma separated list of peers to connect to
+      - PEERS=${PEERS}
+      # PRIMARY_SNAP_RPC_IP is the ip of the primary snap rpc to fetch latest block height and hash
+      - PRIMARY_SNAP_RPC_IP=${PRIMARY_SNAP_RPC_IP}
+      # SNAP_RPCS is a comma separated list of primary snap rpc ips
+      - SNAP_RPCS=${SNAP_RPCS}
+    ports:
+      - 26657:26657 # RPC
+      - 1317:1317 # LCD
+      - 9090:9090 # GRPC
+      - 26656:26656 # P2P
+    networks:
+      - lumen-network
+    restart: on-failure
 
   snapshot-api:
-      build:
-        context: .
-        dockerfile: Dockerfile.api
-      profiles:
-        - snapshot
-      environment:
-        - CHAIN_ID=${CHAIN_ID}
-        - S3_ENDPOINT=${S3_ENDPOINT}
-        - S3_REGION=${S3_REGION}
-        - S3_ACCESS_KEY_ID=${S3_ACCESS_KEY_ID}
-        - S3_SECRET_ACCESS_KEY=${S3_SECRET_ACCESS_KEY}
-        - S3_BUCKET=${S3_BUCKET:-euclid-snapshots}
-        - S3_FORCE_PATH_STYLE=${S3_FORCE_PATH_STYLE:-false}
-        - S3_PUBLIC_BUCKET=${S3_PUBLIC_BUCKET:-false}
-        - S3_PRESIGN_EXPIRY=${S3_PRESIGN_EXPIRY:-3600}
-      ports:
-        - 3001:3000
-      networks:
-        - lumen-network
-      restart: on-failure
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    profiles:
+      - snapshot
+    environment:
+      - CHAIN_ID=${CHAIN_ID}
+      - S3_ENDPOINT=${S3_ENDPOINT}
+      - S3_REGION=${S3_REGION}
+      - S3_ACCESS_KEY_ID=${S3_ACCESS_KEY_ID}
+      - S3_SECRET_ACCESS_KEY=${S3_SECRET_ACCESS_KEY}
+      - S3_BUCKET=${S3_BUCKET:-euclid-snapshots}
+      - S3_FORCE_PATH_STYLE=${S3_FORCE_PATH_STYLE:-false}
+      - S3_PUBLIC_BUCKET=${S3_PUBLIC_BUCKET:-false}
+      - S3_PRESIGN_EXPIRY=${S3_PRESIGN_EXPIRY:-3600}
+    ports:
+      - 3001:3000
+    networks:
+      - lumen-network
+    restart: on-failure
+
+  edgenet:
+    profiles:
+      - edgenet
+    build:
+      context: .
+      dockerfile: Dockerfile.edgenet
+      args:
+        - BINARY=${BINARY}
+        - PLATFORM=${PLATFORM}
+    volumes:
+      - ./.config/${CHAIN_ID}_edgenet/:/${BINARY}/.${BINARY}/
+      - ./cache/:/${BINARY}/cache/
+    environment:
+      - BINARY=${BINARY}
+      - CHAIN_ID=${CHAIN_ID}
+      - DENOM=${DENOM}
+      - STAKE_DENOM=${STAKE_DENOM}
+      - VALIDATOR_MONIKER=validator
+      - VALIDATOR_MNEMONIC=${VALIDATOR_MNEMONIC}
+      - SNAPSHOT_URL=${SNAPSHOT_URL}
+    ports:
+      - 26657:26657 # RPC
+      - 1317:1317 # LCD
+      - 9090:9090 # GRPC
+    networks:
+      - lumen-network
+    restart: on-failure
