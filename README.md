@@ -12,6 +12,8 @@ The project has three main components:
 
 3. **Snapshot API** (`src/server.ts`): A lightweight HTTP server that lists available snapshots from S3 and returns metadata with pre-signed download URLs. Scoped to a single chain via the `CHAIN_ID` environment variable.
 
+Edgenet has moved out of this repo and now lives in its own `edgenet` repository.
+
 ## Prerequisites
 
 - [Bun](https://bun.sh) (v1.0+)
@@ -64,7 +66,7 @@ bun run snapshot
 
 This performs the following steps:
 
-1. Queries the local node RPC for the current block height and chain ID
+1. Queries the local node RPC for the current block height, chain ID, and block time
 2. Stops the chain node (`make stop`)
 3. Compresses the data directory with `tar | lz4`
 4. Restarts the chain node (`make startd`)
@@ -72,6 +74,46 @@ This performs the following steps:
 6. Removes the local archive file
 
 If the chain uses CosmWasm, a separate wasm-only archive is also created and uploaded (`{chain_id}_{height}_wasmonly.tar.lz4`).
+
+Each uploaded object carries the chain timestamp of the snapshotted block as S3 user metadata (`x-amz-meta-block-time`). The API returns it as `blockTime`. Snapshots uploaded before this metadata existed report `blockTime: null`, since the value cannot be recovered after the fact.
+
+## Scheduling Snapshots (PM2)
+
+`bun run snapshot` is a one-shot command. To take snapshots on a recurring schedule, run it under PM2 using `ecosystem.config.cjs`.
+
+```bash
+# Register the job and activate its schedule
+make snapshot-job-start
+
+# Check status and next scheduled run
+make snapshot-job-status
+
+# Tail logs
+make snapshot-job-logs
+
+# Pause the schedule (job stays registered)
+make snapshot-job-stop
+
+# Remove the job from PM2 entirely
+make snapshot-job-delete
+
+# Trigger a snapshot immediately, outside the schedule
+make snapshot-job-now
+```
+
+The job runs every 6 hours by default. Change the schedule by setting `SNAPSHOT_CRON` in `.env` to any 5-field cron expression, then run `make snapshot-job-restart` to apply it.
+
+```bash
+SNAPSHOT_CRON="0 3 * * *"   # daily at 03:00
+```
+
+### Expected behavior
+
+Because the snapshot CLI exits after each run, PM2 reports the job as `stopped` between runs. This is the normal resting state, not a failure. The job is configured with `autorestart: false` so that PM2 does not relaunch it on exit (which would run snapshots back-to-back in a loop) and `cron_restart` to drive the schedule.
+
+If PM2 was started as a systemd service, its daemon may not have `bun` on its `PATH`. Set `BUN_BIN` in `.env` to the absolute path from `which bun` if the job fails to launch.
+
+Run `pm2 startup` once on the host if you want the job to survive a reboot. `make snapshot-job-start` already calls `pm2 save` to persist the process list.
 
 ## Snapshot API Server
 
@@ -118,6 +160,8 @@ Health check.
 
 Lists all snapshots for this chain, sorted by block height (newest first).
 
+The list response does not include `blockTime`. That field lives in S3 user metadata, which the S3 list operation does not return, so including it would cost one extra request per snapshot in the bucket. Use `/snapshots/latest` or `/snapshots/:height` when you need it.
+
 ```bash
 curl http://localhost:3000/snapshots
 ```
@@ -145,6 +189,24 @@ Returns the most recent full snapshot (highest block height). Wasm-only snapshot
 curl http://localhost:3000/snapshots/latest
 ```
 
+```json
+{
+  "chainId": "lumen-1",
+  "height": 1234567,
+  "filename": "lumen-1_1234567.tar.lz4",
+  "size": 1073741824,
+  "sizeFormatted": "1.00 GB",
+  "lastModified": "2026-03-28T12:00:00.000Z",
+  "lastModifiedRelative": "3 hours ago",
+  "blockTime": "2026-03-28T11:47:32.000Z",
+  "url": "https://..."
+}
+```
+
+`blockTime` is the ISO 8601 chain timestamp of block 1234567, meaning the point in chain history the snapshot restores you to. `lastModified` is when the archive was uploaded to S3. The two differ by however long compression and upload took, so use `blockTime` to judge how far behind the chain tip a snapshot leaves you.
+
+`blockTime` is `null` for snapshots uploaded before the CLI began recording it. The API reports `null` rather than substituting `lastModified`, which would misrepresent an upload time as a chain time.
+
 #### `GET /snapshots/latest/download`
 
 Redirects (302) to the download URL of the most recent full snapshot. Designed for direct use with `curl` or `wget` to download the snapshot file in one command.
@@ -159,7 +221,7 @@ wget http://localhost:3000/snapshots/latest/download
 
 #### `GET /snapshots/:height`
 
-Returns the full snapshot at a specific block height. Returns 404 if no snapshot exists at that height.
+Returns the full snapshot at a specific block height, in the same shape as `/snapshots/latest` (including `blockTime`). Returns 404 if no snapshot exists at that height.
 
 ```bash
 curl http://localhost:3000/snapshots/1234567
@@ -177,6 +239,13 @@ curl http://localhost:3000/snapshots/1234567
 | `make snapshot-api` | Start snapshot API server (detached)           |
 | `make snapshot-api-stop`  | Stop snapshot API server                 |
 | `make snapshot-api-logs`  | Tail snapshot API logs                   |
+| `make snapshot-job-start`   | Register snapshot job with PM2 and start its schedule |
+| `make snapshot-job-stop`    | Pause the snapshot schedule                |
+| `make snapshot-job-restart` | Reload job after changing `SNAPSHOT_CRON`  |
+| `make snapshot-job-delete`  | Remove snapshot job from PM2               |
+| `make snapshot-job-logs`    | Tail snapshot job logs                     |
+| `make snapshot-job-status`  | Show job status and next scheduled run     |
+| `make snapshot-job-now`     | Run a snapshot immediately                 |
 | `make clean`        | Remove chain data (`.config/`)                 |
 | `make chown`        | Fix `.config/` ownership (ubuntu user)         |
 
@@ -188,10 +257,11 @@ src/
   server.ts              # Hono HTTP server entry point
   config.ts              # Shared configuration (env vars)
   lib/
-    chain.ts             # Chain RPC queries (block height, chain ID)
+    chain.ts             # Chain RPC queries (block height, chain ID, block time)
     docker.ts            # Node lifecycle via Makefile targets
     compress.ts          # tar + lz4 compression with wasm detection
-    storage.ts           # S3 client (list, upload, presign, delete)
+    storage.ts           # S3 client (list, upload, head, presign, delete)
+    block-time.test.ts   # Tests for the block time metadata round-trip
   routes/
     snapshots.ts         # Snapshot API route handlers
 scripts/

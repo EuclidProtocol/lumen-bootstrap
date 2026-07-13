@@ -12,11 +12,17 @@
  *
  * The "latest" and "by height" endpoints filter out wasm-only snapshots
  * and only return full snapshots. The list endpoint returns everything.
+ *
+ * The single-snapshot endpoints additionally return `blockTime`, the chain
+ * timestamp of the snapshotted block. It lives in S3 user metadata, which
+ * `ListObjectsV2` does not return, so those endpoints spend one extra
+ * `HeadObject` call on the matched key. The list endpoint deliberately does
+ * not, since that would be one round-trip per snapshot in the bucket.
  */
 
 import { Hono } from "hono";
 import { config } from "../config.ts";
-import { listSnapshots } from "../lib/storage.ts";
+import { listSnapshots, withBlockTime } from "../lib/storage.ts";
 
 export const snapshotsRouter = new Hono();
 
@@ -40,8 +46,8 @@ snapshotsRouter.get("/", async (c) => {
 /**
  * GET /snapshots/latest
  *
- * Returns the single most recent full snapshot (highest block height).
- * Wasm-only snapshots are excluded.
+ * Returns the single most recent full snapshot (highest block height),
+ * including its `blockTime`. Wasm-only snapshots are excluded.
  *
  * Returns 404 if no snapshots exist.
  */
@@ -51,12 +57,14 @@ snapshotsRouter.get("/latest", async (c) => {
   // Filter out wasm-only snapshots so "latest" returns a full snapshot.
   const mainSnapshots = snapshots.filter((s) => !s.filename.includes("wasmonly"));
 
-  if (mainSnapshots.length === 0) {
+  // listSnapshots already sorts by height descending, so index 0 is the latest.
+  const latest = mainSnapshots[0];
+
+  if (!latest) {
     return c.json({ error: "No snapshots found" }, 404);
   }
 
-  // listSnapshots already sorts by height descending, so index 0 is the latest.
-  return c.json(mainSnapshots[0]);
+  return c.json(await withBlockTime(`${prefix}${latest.filename}`, latest));
 });
 
 /**
@@ -84,8 +92,8 @@ snapshotsRouter.get("/latest/download", async (c) => {
 /**
  * GET /snapshots/:height
  *
- * Returns the full snapshot at the specified block height.
- * Wasm-only snapshots are excluded.
+ * Returns the full snapshot at the specified block height, including its
+ * `blockTime`. Wasm-only snapshots are excluded.
  *
  * Returns 400 if the height parameter is not a valid number.
  * Returns 404 if no snapshot exists at the given height.
@@ -103,5 +111,5 @@ snapshotsRouter.get("/:height", async (c) => {
     return c.json({ error: `No snapshot found at height ${height}` }, 404);
   }
 
-  return c.json(match);
+  return c.json(await withBlockTime(`${prefix}${match.filename}`, match));
 });

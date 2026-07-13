@@ -4,7 +4,7 @@
  * Replaces the original `snapshot.sh` bash script with a TypeScript
  * implementation. Orchestrates the full snapshot lifecycle:
  *
- *   1. Query the chain node for current block height and chain ID
+ *   1. Query the chain node for current block height, chain ID, and block time
  *   2. Stop the node (required for data consistency)
  *   3. Compress chain data into lz4 archives
  *   4. Upload archives to S3-compatible storage
@@ -35,9 +35,13 @@ if (command !== "snapshot") {
 async function runSnapshot() {
   // Step 1: Fetch chain state from the local RPC endpoint.
   console.log("==> Fetching chain info...");
+  // The same /status response carries the header time of that block, which is
+  // persisted alongside the archive so consumers can tell how stale a snapshot
+  // is in chain time rather than in S3 upload time.
   const status = await getStatus();
   console.log(`    Chain ID:     ${status.chainId}`);
   console.log(`    Block height: ${status.blockHeight}`);
+  console.log(`    Block time:   ${status.blockTime}`);
 
   // Resolve chain home directory. If not explicitly set via CHAIN_HOME,
   // derive it from the chain ID (e.g. `.config/lumen-1`).
@@ -68,18 +72,20 @@ async function runSnapshot() {
   }
 
   // Step 4: Upload to S3. Files are stored under a chain ID prefix
-  // (e.g. `lumen-1/lumen-1_1234567.tar.lz4`).
+  // (e.g. `lumen-1/lumen-1_1234567.tar.lz4`). The block time is attached to
+  // each object as user metadata (`x-amz-meta-block-time`); it cannot be
+  // recovered afterwards, so it has to be written on the way in.
   const s3Prefix = `${status.chainId}/`;
   const mainKey = `${s3Prefix}${status.chainId}_${status.blockHeight}.tar.lz4`;
 
   console.log(`==> Uploading snapshot to S3 (${mainKey})...`);
-  await uploadSnapshot(result.mainFile, mainKey);
+  await uploadSnapshot(result.mainFile, mainKey, status.blockTime);
   console.log(`    Uploaded ${mainKey}`);
 
   if (result.wasmFile) {
     const wasmKey = `${s3Prefix}${status.chainId}_${status.blockHeight}_wasmonly.tar.lz4`;
     console.log(`==> Uploading wasm snapshot (${wasmKey})...`);
-    await uploadSnapshot(result.wasmFile, wasmKey);
+    await uploadSnapshot(result.wasmFile, wasmKey, status.blockTime);
     console.log(`    Uploaded ${wasmKey}`);
   }
 

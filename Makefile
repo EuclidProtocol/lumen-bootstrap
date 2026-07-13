@@ -1,7 +1,9 @@
 include .env
 export
 
-.PHONY: start stop startd build clean snapshot-api snapshot-api-stop snapshot-api-logs
+.PHONY: start stop startd build clean snapshot-api snapshot-api-stop snapshot-api-logs \
+	snapshot-job-start snapshot-job-stop snapshot-job-restart snapshot-job-delete snapshot-job-logs \
+	snapshot-job-status snapshot-job-now
 
 # Build the Docker images
 build:
@@ -37,22 +39,46 @@ snapshot-api-stop:
 snapshot-api-logs:
 	@DOCKER_BUILDKIT=1 docker compose --profile snapshot logs -f snapshot-api --since 10s
 
-# Start edgenet node in foreground
-edgenet-start:
-	@echo "Starting edgenet node..."
-	@DOCKER_BUILDKIT=1 docker compose --profile edgenet up --build edgenet
+# ──────────────────────────────────────────────────────────────
+# Snapshot job (PM2)
+#
+# The snapshot CLI is one-shot: PM2 launches it on a cron schedule, it runs to
+# completion, then exits. A "stopped" status in `pm2 list` between runs is
+# expected, not a failure.
+# ──────────────────────────────────────────────────────────────
 
-# Start edgenet node in background
-edgenet-startd:
-	@echo "Starting edgenet node in background..."
-	@DOCKER_BUILDKIT=1 docker compose --profile edgenet up -d --build edgenet
-# Stop edgenet node
-edgenet-stop:
-	@DOCKER_BUILDKIT=1 docker compose --profile edgenet stop edgenet
+# Register the snapshot job with PM2 and activate its cron schedule
+snapshot-job-start:
+	@mkdir -p logs
+	@pm2 start ecosystem.config.cjs
+	@pm2 save
 
-# View edgenet node logs
-edgenet-logs:
-	@DOCKER_BUILDKIT=1 docker compose --profile edgenet logs -f edgenet --since 10s
+# Pause the cron schedule (job stays in `pm2 list`)
+snapshot-job-stop:
+	@pm2 stop snapshot-job
+	@pm2 save
+
+# Reload the job after editing ecosystem.config.cjs or SNAPSHOT_CRON
+snapshot-job-restart:
+	@pm2 restart ecosystem.config.cjs --update-env
+	@pm2 save
+
+# Remove the job from PM2 entirely
+snapshot-job-delete:
+	@pm2 delete snapshot-job
+	@pm2 save
+
+# Tail snapshot job logs
+snapshot-job-logs:
+	@pm2 logs snapshot-job --lines 50
+
+# Show job status and next scheduled run
+snapshot-job-status:
+	@pm2 describe snapshot-job
+
+# Trigger a snapshot immediately, outside the cron schedule
+snapshot-job-now:
+	@bun run snapshot
 
 # Remove chain data, backing up node_key.json to cache/ first
 clean:

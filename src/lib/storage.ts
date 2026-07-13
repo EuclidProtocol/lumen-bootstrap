@@ -22,6 +22,7 @@ import {
   ListObjectsV2Command,
   DeleteObjectCommand,
   GetObjectCommand,
+  HeadObjectCommand,
 } from "@aws-sdk/client-s3";
 import { Upload } from "@aws-sdk/lib-storage";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
@@ -43,7 +44,17 @@ const client = new S3Client({
   forcePathStyle: config.s3.forcePathStyle,
 });
 
-/** Metadata for a single snapshot as returned by the API. */
+/**
+ * S3 user-metadata key holding the chain time of the snapshotted block.
+ *
+ * On the wire this is the header `x-amz-meta-block-time`. The AWS SDK strips
+ * the `x-amz-meta-` prefix and lowercases the remainder, so the same constant
+ * is used both when writing (`Upload` params `Metadata`) and when reading
+ * (`HeadObject` response `Metadata`).
+ */
+export const BLOCK_TIME_METADATA_KEY = "block-time";
+
+/** Metadata for a single snapshot as returned by the list endpoint. */
 export interface SnapshotMeta {
   chainId: string;
   height: number;
@@ -58,6 +69,27 @@ export interface SnapshotMeta {
   lastModifiedRelative: string;
   /** Download URL. Either a direct public URL or a time-limited pre-signed URL. */
   url: string;
+}
+
+/**
+ * A snapshot plus its chain block time, as returned by the single-snapshot
+ * endpoints (`/snapshots/latest`, `/snapshots/:height`).
+ *
+ * Block time is stored as S3 user metadata at upload time. `ListObjectsV2`
+ * does not return user metadata, so reading it back costs one `HeadObject`
+ * call per key. That is affordable for a single object but not for a whole
+ * listing, which is why the list endpoint returns `SnapshotMeta` instead.
+ */
+export interface SnapshotDetail extends SnapshotMeta {
+  /**
+   * ISO 8601 chain timestamp of the block the snapshot was taken at, or
+   * `null` for snapshots uploaded before this metadata was recorded.
+   *
+   * Distinct from `lastModified`, which is when the archive landed in S3.
+   * There is no way to recover the block time of a legacy snapshot from the
+   * object itself, so it is reported as `null` rather than guessed at.
+   */
+  blockTime: string | null;
 }
 
 /**
@@ -164,16 +196,69 @@ export async function listSnapshots(prefix?: string, generateUrl?: boolean): Pro
 }
 
 /**
+ * Reads the snapshot's block time out of a raw S3 user-metadata map.
+ *
+ * Kept as a pure function (rather than inlined into `getSnapshotBlockTime`)
+ * so the mapping from S3 metadata to API field can be tested without a bucket.
+ *
+ * Returns `null` when the key is absent (snapshots uploaded before block time
+ * was recorded) or when the stored value is empty. Never substitutes another
+ * timestamp in its place.
+ */
+export function blockTimeFromMetadata(metadata: Record<string, string> | undefined): string | null {
+  const value = metadata?.[BLOCK_TIME_METADATA_KEY];
+  if (typeof value !== "string" || value.length === 0) return null;
+  return value;
+}
+
+/**
+ * Fetches the block time recorded on a snapshot object via `HeadObject`.
+ *
+ * `HeadObject` transfers headers only, not the (multi-gigabyte) body, so this
+ * is cheap. It is nonetheless one request per key, hence single-object use only.
+ *
+ * @param key - S3 object key
+ */
+export async function getSnapshotBlockTime(key: string): Promise<string | null> {
+  const head = await client.send(
+    new HeadObjectCommand({
+      Bucket: config.s3.bucket,
+      Key: key,
+    }),
+  );
+  return blockTimeFromMetadata(head.Metadata);
+}
+
+/**
+ * Enriches a listed snapshot with the block time stored on its S3 object.
+ *
+ * @param key - S3 object key of the snapshot (the listing already matched it)
+ * @param snapshot - Snapshot metadata derived from the listing
+ */
+export async function withBlockTime(key: string, snapshot: SnapshotMeta): Promise<SnapshotDetail> {
+  return {
+    ...snapshot,
+    blockTime: await getSnapshotBlockTime(key),
+  };
+}
+
+/**
  * Uploads a local file to S3 using multipart upload.
  *
  * Uses the AWS SDK's managed Upload class which automatically splits
  * large files into 64 MB parts and uploads up to 4 parts concurrently.
  * Progress is printed to stdout as a percentage.
  *
+ * The block time is written as S3 user metadata (`x-amz-meta-block-time`).
+ * It is a required argument, not an option with a fallback: the caller has
+ * just read it from the chain RPC alongside the height the key is named
+ * after, and no other source for it exists once the archive is in the bucket.
+ *
  * @param filePath - Absolute path to the local file
  * @param key - S3 object key (e.g. "lumen-1/lumen-1_1234567.tar.lz4")
+ * @param blockTime - ISO 8601 chain timestamp of the snapshotted block
  */
-export async function uploadSnapshot(filePath: string, key: string): Promise<void> {
+export async function uploadSnapshot(filePath: string, key: string, blockTime: string): Promise<void> {
   const stream = createReadStream(filePath);
 
   const upload = new Upload({
@@ -182,6 +267,9 @@ export async function uploadSnapshot(filePath: string, key: string): Promise<voi
       Bucket: config.s3.bucket,
       Key: key,
       Body: stream,
+      Metadata: {
+        [BLOCK_TIME_METADATA_KEY]: blockTime,
+      },
     },
     queueSize: 4,           // Upload 4 parts concurrently
     partSize: 1024 * 1024 * 64, // 64 MB per part
