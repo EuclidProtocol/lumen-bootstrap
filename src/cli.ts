@@ -20,8 +20,8 @@
 import { resolve } from "path";
 import { unlinkSync } from "fs";
 import { config } from "./config.ts";
-import { getStatus } from "./lib/chain.ts";
-import { stopNode, startNode, cleanChainData } from "./lib/docker.ts";
+import { getStatus, isNodeReachable } from "./lib/chain.ts";
+import { stopNode, startNode, cleanChainData, isDockerRunning } from "./lib/docker.ts";
 import { createSnapshot } from "./lib/compress.ts";
 import { uploadSnapshot } from "./lib/storage.ts";
 
@@ -32,7 +32,40 @@ if (command !== "snapshot") {
   process.exit(1);
 }
 
+/**
+ * Wipes stale chain data and brings the node back up fresh. Used as the
+ * fallback when there is nothing to snapshot.
+ */
+async function cleanAndRestart() {
+  console.log("==> Cleaning chain data (will state sync on restart)...");
+  await cleanChainData();
+
+  console.log("==> Starting service (state syncing)...");
+  await startNode();
+
+  console.log("==> Done.");
+}
+
 async function runSnapshot() {
+  // Pre-flight: the whole snapshot path (query RPC, stop, compress, upload)
+  // assumes a live node serving its RPC. Two ways that can be false:
+  //   - Docker daemon is down entirely.
+  //   - Daemon is up but the chain container is crash-looping ("Restarting"),
+  //     so the RPC connection is refused.
+  // Either way there is nothing to snapshot, so skip straight to wiping stale
+  // chain data and bringing the node back up fresh.
+  if (!(await isDockerRunning())) {
+    console.log("==> Docker not running, skipping snapshot.");
+    await cleanAndRestart();
+    return;
+  }
+
+  if (!(await isNodeReachable())) {
+    console.log("==> Node RPC unreachable (container down/restarting), skipping snapshot.");
+    await cleanAndRestart();
+    return;
+  }
+
   // Step 1: Fetch chain state from the local RPC endpoint.
   console.log("==> Fetching chain info...");
   // The same /status response carries the header time of that block, which is

@@ -43,6 +43,31 @@ async function run(args: string[]): Promise<void> {
 }
 
 /**
+ * Checks whether the Docker daemon is reachable by running `docker info`.
+ *
+ * `docker info` exits non-zero (and prints to stderr) when the daemon is not
+ * running, so its exit code is a cheap, reliable liveness probe. Output is
+ * discarded to keep the CLI log clean. Respects ENABLE_SUDO.
+ *
+ * Returns true if the daemon responds, false otherwise. Never throws.
+ */
+export async function isDockerRunning(): Promise<boolean> {
+  const cmd = buildCommand(["docker", "info"]);
+  try {
+    const proc = Bun.spawn(cmd, {
+      stdout: "ignore",
+      stderr: "ignore",
+      cwd: REPO_ROOT,
+    });
+    const exitCode = await proc.exited;
+    return exitCode === 0;
+  } catch {
+    // `docker` binary missing entirely, or spawn failed.
+    return false;
+  }
+}
+
+/**
  * Stops the blockchain node by running `make stop`.
  * The node must be stopped before creating a snapshot to ensure
  * data consistency.

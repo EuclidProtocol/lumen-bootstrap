@@ -51,6 +51,25 @@ export function normalizeBlockTime(raw: unknown): string {
 }
 
 /**
+ * Probes whether the local chain node's Tendermint RPC is reachable.
+ *
+ * A healthy snapshot run needs the node serving `/status`. This is separate
+ * from the Docker daemon being up: a container can be crash-looping
+ * ("Restarting") while the daemon is fine, in which case the RPC connection
+ * is refused. Any failure (connection refused, timeout, non-2xx) is treated
+ * as unreachable. Never throws.
+ */
+export async function isNodeReachable(): Promise<boolean> {
+  const url = `http://localhost:${config.rpcPort}/status`;
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Fetches the current status from the local chain node's Tendermint RPC.
  *
  * Calls `GET http://localhost:{RPC_PORT}/status` and extracts the block
